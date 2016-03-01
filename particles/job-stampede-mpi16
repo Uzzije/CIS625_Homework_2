@@ -1,0 +1,8 @@
+#!/bin/bash
+#SBATCH -A TG-CCR140008
+#SBATCH -J particle-mpi16
+#SBATCH -o particle-mpi16.stdout
+#SBATCH -N 16 -n 16         
+#SBATCH -p normal
+#SBATCH -t 00:10:00     
+ibrun ./mpi -n 1000 -o mpi.txt

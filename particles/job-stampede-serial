@@ -1,0 +1,8 @@
+#!/bin/bash
+#SBATCH -A TG-CCR140008
+#SBATCH -J particle-serial
+#SBATCH -o particle-serial.stdout
+#SBATCH -n 1         
+#SBATCH -p normal
+#SBATCH -t 00:10:00     
+./serial -n 1000 -o serial.txt
