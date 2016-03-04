@@ -17,9 +17,9 @@ int binNum;
 
 void buildBins(vector<bin_t>& bins, particle_t* particles, int n)
 {
-    gridSize = sqrt(n*_density);
-    binSize = _cutoff * 2;  
-    binNum = int(gridSize / binSize)+1; // Should be around sqrt(N/2)
+    gridSize = sqrt(n*_density); //gridsize is a square value of number of particle x density
+    binSize = _cutoff * 2;  // bin size
+    binNum = int(gridSize / binSize)+1; // Should be around sqrt(N/2) number of bins in the a row
 
     printf("Grid Size: %.4lf\n",gridSize);
     printf("Number of Bins: %d*%d\n",binNum,binNum);
@@ -36,9 +36,13 @@ void buildBins(vector<bin_t>& bins, particle_t* particles, int n)
 
     for (int i = 0; i < n; i++)
     {
-        int x = int(particles[i].x / binSize);
-        int y = int(particles[i].y / binSize);
-        bins[x*binNum + y].push_back(particles[i]);
+        int x = int(particles[i].x / binSize); //get x coordinates of each bin
+        int y = int(particles[i].y / binSize); // get y coordinates of each bin
+        bins[x*binNum + y].push_back(particles[i]); // bins pointer move to the address at x*binNum (this would be the row number) + y.
+        // Hence hence the pointer vectors points to particle[i] as well
+        printf("y value = %d\n", y);
+        printf("x value = %d\n", x);
+        printf("binNum value = %d\n", binNum);
 		printf("index = %d\n", x*binNum + y);
     }
 	int z;
