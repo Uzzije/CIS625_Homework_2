@@ -51,10 +51,10 @@ void set_size( int n )
 //
 //  Initialize the particle positions and velocities
 //
-void init_particles( int n, vector<particle_t*> *p )
+void init_particles( int n, particle_t *p )
 {
     srand48( time( NULL ) );
-	 
+        
     int sx = (int)ceil(sqrt((double)n));
     int sy = (n+sx-1)/sx;
     
@@ -64,26 +64,24 @@ void init_particles( int n, vector<particle_t*> *p )
     
     for( int i = 0; i < n; i++ ) 
     {
-		particle_t *particle = new particle_t();
         //
         //  make sure particles are not spatially sorted
         //
         int j = lrand48()%(n-i);
         int k = shuffle[j];
         shuffle[j] = shuffle[n-i-1];
+        
         //
         //  distribute particles evenly to ensure proper spacing
         //
-		particle->x = size*(1.+(k%sx))/(1+sx);
-		particle->y = size*(1.+(k/sx))/(1+sy);
+        p[i].x = size*(1.+(k%sx))/(1+sx);
+        p[i].y = size*(1.+(k/sx))/(1+sy);
 
         //
         //  assign random velocities within a bound
         //
-		particle->vx = drand48()*2-1;
-		particle->vy = drand48()*2-1;
-		
-		(*p).push_back(particle);
+        p[i].vx = drand48()*2-1;
+        p[i].vy = drand48()*2-1;
     }
     free( shuffle );
 }
@@ -152,7 +150,7 @@ void move( particle_t &p )
 //
 //  I/O routines
 //
-void save( FILE *f, int n, vector<particle_t*> *p )
+void save( FILE *f, int n, particle_t *p )
 {
     static bool first = true;
     if( first )
@@ -161,7 +159,7 @@ void save( FILE *f, int n, vector<particle_t*> *p )
         first = false;
     }
     for( int i = 0; i < n; i++ )
-        fprintf( f, "%g %g\n", (*p)[i]->x, (*p)[i]->y );
+        fprintf( f, "%g %g\n", p[i].x, p[i].y );
 }
 
 //

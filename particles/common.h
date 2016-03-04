@@ -1,6 +1,4 @@
-#include <vector>
-
-using namespace std;
+#include<vector>
 
 #ifndef __CS267_COMMON_H__
 #define __CS267_COMMON_H__
@@ -27,6 +25,8 @@ typedef struct
   double ay;
 } particle_t;
 
+typedef std::vector<particle_t> bin_type;
+
 //
 //  timing routines
 //
@@ -36,7 +36,7 @@ double read_timer( );
 //  simulation routines
 //
 void set_size( int n );
-void init_particles( int n, vector<particle_t*> *p );
+void init_particles( int n, particle_t *p );
 void apply_force( particle_t &particle, particle_t &neighbor , double *dmin, double *davg, int *navg);
 void move( particle_t &p );
 
@@ -45,7 +45,7 @@ void move( particle_t &p );
 //  I/O routines
 //
 FILE *open_save( char *filename, int n );
-void save( FILE *f, int n, vector<particle_t*> *p );
+void save( FILE *f, int n, particle_t *p );
 
 //
 //  argument processing routines
