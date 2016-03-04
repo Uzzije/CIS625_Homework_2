@@ -3,75 +3,183 @@
 #include <assert.h>
 #include <math.h>
 #include <pthread.h>
+#include <vector>
+#include <algorithm>
+#include "pthread_barrier.h"
 #include "common.h"
 
+using std::vector;
 //
 //  global variables
 //
-int n, n_threads,no_output=0;
-particle_t *particles;
+
+extern double size;
+
+double cutoff = 0.01;
+int offset[9];
+int num_bins;
+
+vector<vector<particle_t> > grid;
+
+int n, n_threads, no_output = 0;
 FILE *fsave,*fsum;
+double gabsmin = 1.0, gabsavg = 0.0;
+
+particle_t *particles;
+
 pthread_barrier_t barrier;
-pthread_mutex_t mutex=PTHREAD_MUTEX_INITIALIZER;
-double gabsmin=1.0,gabsavg=0.0;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 //
 //  check that pthreads routine call was successful
 //
 #define P( condition ) {if( (condition) != 0 ) { printf( "\n FAILURE in %s, line %d\n", __FILE__, __LINE__ );exit( 1 );}}
 
+int index(int i, int j)
+{
+    return i*num_bins + j;
+}
+
+void compute_offset()
+{
+    offset[0] = index(-1,-1);
+    offset[1] = index(-1,0);
+    offset[2] = index(-1,1);
+    offset[3] = index(0,-1);
+    offset[4] = index(0,0);
+    offset[5] = index(0,1);
+    offset[6] = index(1,-1);
+    offset[7] = index(1,0);
+    offset[8] = index(1,1);      
+}
+
+int get_bin_index(particle_t& p)
+{
+    int i = p.x / (2 * cutoff) + 1;
+    int j = p.y / (2 * cutoff) + 1;
+    return index(i,j);
+}
+
+void resize_grid()
+{
+    num_bins = (int)ceil(size/(2*cutoff)) + 2;
+    grid.resize(num_bins*num_bins);
+}
+
+void bin_particles(int n, particle_t* particles)
+{
+    for(int i = 0; i < n; i++) {
+        int j = get_bin_index(particles[i]);
+        grid[j].push_back(particles[i]);
+    }
+}
+
+vector<particle_t> get_neighbors(int idx)
+{
+    vector<particle_t> neighbors;
+    for(int i = 0; i < 9; i++) {
+        int bin = idx + offset[i];
+        for(int j = 0; j < grid[bin].size(); j++) {
+            neighbors.push_back(grid[bin][j]);
+        }
+    }
+    return neighbors;
+}
+
 //
 //  This is where the action happens
 //
 void *thread_routine( void *pthread_id )
 {
-    int navg,nabsavg=0;
-    double dmin,absmin=1.0,davg,absavg=0.0;
+    int navg, nabsavg=0;
+    double dmin, absmin = 1.0, davg,absavg = 0.0;
     int thread_id = *(int*)pthread_id;
 
+    //printf("Thread %d: Begin\n", thread_id);
+
+    int total_bins = num_bins * num_bins;
+    int bins_per_thread = (total_bins + n_threads - 1) / n_threads;
+    int first = min(thread_id * bins_per_thread + 1, total_bins);
+    int last = min((thread_id + 1) * bins_per_thread + 1, total_bins);
+
+    // These values are NOT the particles that this thread simulates
+    // These are only the particles that this thread is responsible for rebinning
     int particles_per_thread = (n + n_threads - 1) / n_threads;
-    int first = min(  thread_id    * particles_per_thread, n );
-    int last  = min( (thread_id+1) * particles_per_thread, n );
+    int first_particle = min(thread_id * particles_per_thread, n);
+    int last_particle = min((thread_id + 1)* particles_per_thread, n);
+
+    //printf("Thread %d: bins_owned (%d) = (%d, %d)\n", thread_id, bins_per_thread, first, last);
+    //printf("Thread %d: parts_owned (%d) = (%d, %d)\n", thread_id, particles_per_thread, first_particle, last_particle);
     
     //
     //  simulate a number of time steps
     //
     for( int step = 0; step < NSTEPS; step++ )
     {
+     //   printf("Thread %d: Begin Iteration %d\n", thread_id, step);
         dmin = 1.0;
         navg = 0;
         davg = 0.0;
         //
         //  compute forces
         //
-        for( int i = first; i < last; i++ )
-        {
-            particles[i].ax = particles[i].ay = 0;
-            for (int j = 0; j < n; j++ )
-                apply_force( particles[i], particles[j], &dmin, &davg, &navg );
+        for(int bin = first; bin < last; bin++) {
+            if(grid[bin].size() > 0) { //False for all boundary bins
+                vector<particle_t> neighbors = get_neighbors(bin);
+                for(int k = 0; k < grid[bin].size(); k++) {
+                    grid[bin][k].ax = grid[bin][k].ay = 0;
+                    for(int l = 0; l < neighbors.size(); l++) {
+                        apply_force(grid[bin][k], neighbors[l], &dmin, &davg, &navg);
+                    }
+                }
+            }
         }
-        
-        pthread_barrier_wait( &barrier );
+       // printf("Thread %d: Reached First Barrier, Iteration %d\n", thread_id, step);
+        pthread_barrier_wait(&barrier);
         
         if( no_output == 0 )
         {
           //
           // Computing statistical data
           // 
-          if (navg) {
-            absavg +=  davg/navg;
-            nabsavg++;
-          }
-          if (dmin < absmin) absmin = dmin;
-	}
-
-        //
-        //  move particles
-        //
-        for( int i = first; i < last; i++ ) 
-            move( particles[i] );
+            if (navg) {
+                absavg +=  davg/navg;
+                nabsavg++;
+            }
+            if (dmin < absmin) {
+                absmin = dmin;
+            }
+        }
+    
+        // Move each particle for this thread
+        // Copy particles back to original position in particles array
+        for(int bin = first; bin < last; bin++) {
+            for(int k = 0; k < grid[bin].size(); k++) {
+                move(grid[bin][k]);
+                particles[grid[bin][k].index] = grid[bin][k];
+            }
+            grid[bin].clear(); //Clear our bins
+        }
+        //printf("Thread %d: Reached Second Barrier, Iteration %d\n", thread_id, step);
+        pthread_barrier_wait(&barrier);
         
-        pthread_barrier_wait( &barrier );
+        //At this point all threads have computed new positions for
+        //their particles and cleared their bins
+        //Now we can safely rebin all our particles
+        //Sadly it seems this part has to be essentially serial
+        //since the STL isn't thread safe for writes
+        pthread_mutex_lock(&mutex); 
+        for(int i = first_particle; i < last_particle; i++) {
+            int j = get_bin_index(particles[i]);
+            grid[j].push_back(particles[i]);
+        }
+        pthread_mutex_unlock(&mutex);
+        //printf("Thread %d: Reached Thrid Barrier, Iteration %d\n", thread_id, step);
+        
+        //Need to wait for all threads to finish rebinning
+        //One more sync point than starter code, but can't
+        //seem to avoid it
+        pthread_barrier_wait(&barrier);
         
         //
         //  save if necessary
@@ -123,23 +231,36 @@ int main( int argc, char **argv )
     fsave = savename ? fopen( savename, "w" ) : NULL;
     fsum = sumname ? fopen ( sumname, "a" ) : NULL;
 
-    if( find_option( argc, argv, "-no" ) != -1 )
+    if(find_option( argc, argv, "-no" ) != -1) {
       no_output = 1;
+    }
 
     //
     //  allocate resources
     //
-    particles = (particle_t*) malloc( n * sizeof(particle_t) );
-    set_size( n );
-    init_particles( n, particles );
+    particles = (particle_t*) malloc(n * sizeof(particle_t));
+    set_size(n);
+    init_particles(n, particles);
+
+    // Store the position of a particle in the list
+    // with the particle so each thread knows where
+    // to place the result
+    for(int i = 0; i < n; i++) {
+        particles[i].index = i;
+    }    
+
+    resize_grid();
+    compute_offset();
+    bin_particles(n, particles);
 
     pthread_attr_t attr;
-    P( pthread_attr_init( &attr ) );
-    P( pthread_barrier_init( &barrier, NULL, n_threads ) );
+    P(pthread_attr_init(&attr));
+    P(pthread_barrier_init(&barrier, NULL, n_threads));
 
-    int *thread_ids = (int *) malloc( n_threads * sizeof( int ) );
-    for( int i = 0; i < n_threads; i++ ) 
+    int *thread_ids = (int *) malloc(n_threads * sizeof(int));
+    for(int i = 0; i < n_threads; i++ ) {
         thread_ids[i] = i;
+    }
 
     pthread_t *threads = (pthread_t *) malloc( n_threads * sizeof( pthread_t ) );
     
@@ -147,13 +268,15 @@ int main( int argc, char **argv )
     //  do the parallel work
     //
     double simulation_time = read_timer( );
-    for( int i = 1; i < n_threads; i++ ) 
-        P( pthread_create( &threads[i], &attr, thread_routine, &thread_ids[i] ) );
+    for(int i = 1; i < n_threads; i++) {
+        P(pthread_create(&threads[i], &attr, thread_routine, &thread_ids[i]));
+    }
+
+    thread_routine(&thread_ids[0]);
     
-    thread_routine( &thread_ids[0] );
-    
-    for( int i = 1; i < n_threads; i++ ) 
-        P( pthread_join( threads[i], NULL ) );
+    for(int i = 1; i < n_threads; i++) { 
+        P(pthread_join(threads[i], NULL));
+    }
     simulation_time = read_timer( ) - simulation_time;
    
     printf( "n = %d, simulation time = %g seconds", n, simulation_time);

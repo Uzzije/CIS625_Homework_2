@@ -14,7 +14,7 @@
 int main( int argc, char **argv )
 {
     int n[MAX_ENTRIES],i,count=0,num,p[MAX_ENTRIES];
-    double t[MAX_ENTRIES],slope[MAX_ENTRIES-1],ss[MAX_ENTRIES],sse[MAX_ENTRIES],ws[MAX_ENTRIES],grade,ssgrade,wsgrade,sse_avg,ws_avg;
+    double t[MAX_ENTRIES],slope[MAX_ENTRIES-1],ss[MAX_ENTRIES],sse[MAX_ENTRIES],ws[MAX_ENTRIES],sse_avg,ws_avg;
     double lt[MAX_ENTRIES],ln[MAX_ENTRIES],b2,sx=0.0,sx2=0.0,sxy=0.0,sy=0.0;
 
     if( find_option( argc, argv, "-h" ) >= 0 )
@@ -59,12 +59,6 @@ int main( int argc, char **argv )
       }
       printf("\nSlope estimate for line fit is: %lf\n", b2);
 	  
-	  if (b2 < 1.3) grade = 100.00;
-	  else if (b2 < 1.5) grade = 75.00 + (1.5-b2)/(0.2) * 25.00;
-	  else if (b2 < 2) grade = (2-b2)/0.5 * 75.00;
-	  else grade =0.0;
-	  
-	  printf("Serial Grade = %7.2lf",grade);
       printf("\n\n");
     }
 
@@ -124,18 +118,6 @@ int main( int argc, char **argv )
 	  ws_avg/=num;
 	  
 	  printf("Average weak scaling efficiency: %7.2lf \n\n",ws_avg);
-
-	  if (sse_avg > 0.8) ssgrade=100.00;
-	  else if (sse_avg > 0.5) ssgrade=75.00 + 25.00 * (sse_avg-0.5)/0.3; 
-	  else ssgrade = sse_avg/0.5 * 75.00;
-	  
-	  if (ws_avg > 0.8) wsgrade=100.00;
-	  else if (ws_avg > 0.5) wsgrade=75.00 + 25.00 * (ws_avg-0.5)/0.3; 
-	  else wsgrade = ws_avg/0.5 * 75.00;
-	  
-	  grade= 0.5 * ssgrade + 0.5 * wsgrade;
-	  
-	  printf("\n%s Grade = %7.2f\n\n",autoname,grade);
     }
 
     fclose( fread );

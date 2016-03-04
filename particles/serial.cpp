@@ -2,7 +2,89 @@
 #include <stdio.h>
 #include <assert.h>
 #include <math.h>
+#include <vector>
+#include <algorithm>
+#include <iostream>
 #include "common.h"
+
+using std::vector;
+using std::cout;
+using std::endl;
+using std::cin;
+
+extern double size;
+
+double cutoff = 0.01;
+int offset[9];
+int num_bins;
+
+vector<vector<particle_t> > grid;
+
+int index(double i, double j)
+{
+    return i*num_bins + j;
+}
+
+void compute_offset()
+{
+    offset[0] = index(-1,-1);
+    offset[1] = index(-1,0);
+    offset[2] = index(-1,1);
+    offset[3] = index(0,-1);
+    offset[4] = index(0,0);
+    offset[5] = index(0,1);
+    offset[6] = index(1,-1);
+    offset[7] = index(1,0);
+    offset[8] = index(1,1);      
+}
+
+int get_bin_index(particle_t& p)
+{
+    double j = p.x / (2 * cutoff) + 1;
+    double i = p.y / (2 * cutoff) + 1;
+    return index(i,j);
+}
+
+void resize_grid()
+{
+    num_bins = (int)ceil(size/(2*cutoff)) + 2;
+    grid.resize(num_bins*num_bins);
+	printf("bin_size = %d\n", num_bins);
+	printf("grid_size = %zu\n", grid.size());
+}
+
+void clear_grid()
+{
+    for(int i = 0; i < num_bins*num_bins; i++) {
+        grid[i].clear();
+    }
+}
+
+void bin_particles(int n, particle_t* particles)
+{
+    for(int i = 0; i < n; i++) {
+        int j = get_bin_index(particles[i]);
+        grid[j].push_back(particles[i]);
+
+
+		printf("index = %d\n", j);
+
+    }
+	int z;
+	cin >> z;
+}
+
+vector<particle_t> get_neighbors(int idx)
+{
+    vector<particle_t> neighbors;
+    for(int i = 0; i < 9; i++) {
+        int bin = idx + offset[i];
+        for(int j = 0; j < grid[bin].size(); j++) {
+            neighbors.push_back(grid[bin][j]);
+        }
+    }
+    return neighbors;
+}
 
 //
 //  benchmarking program
@@ -29,11 +111,28 @@ int main( int argc, char **argv )
     char *sumname = read_string( argc, argv, "-s", NULL );
     
     FILE *fsave = savename ? fopen( savename, "w" ) : NULL;
-    FILE *fsum = sumname ? fopen ( sumname, "a" ) : NULL;
+    FILE *fsum = sumname ? fopen ( sumname, "a" ) : NULL;    
 
     particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
     set_size( n );
-    init_particles( n, particles );
+    // init_particles(n, particles);
+	particles[0].x = 0.0;
+	particles[0].y = 0.0;
+	particles[1].x = 0.05;
+	particles[1].y = 0.05;
+	particles[2].x = 0.05;
+	particles[2].y = 0.0;
+	particles[3].x = 0.0;
+	particles[3].y = 0.05;
+	particles[4].x = 0.035;
+	particles[4].y = 0.035;
+	for ( int i = 0; i < n; i++ )
+	{
+		printf("%d.\t( %f, %f )\n", i, particles[i].x, particles[i].y);
+	}
+    resize_grid();
+    compute_offset();
+    bin_particles(n, particles);
     
     //
     //  simulate a number of time steps
@@ -42,24 +141,38 @@ int main( int argc, char **argv )
 	
     for( int step = 0; step < NSTEPS; step++ )
     {
-	navg = 0;
+	    navg = 0;
         davg = 0.0;
-	dmin = 1.0;
-        //
-        //  compute forces
-        //
-        for( int i = 0; i < n; i++ )
-        {
-            particles[i].ax = particles[i].ay = 0;
-            for (int j = 0; j < n; j++ )
-				apply_force( particles[i], particles[j],&dmin,&davg,&navg);
+	    dmin = 1.0;
+
+        for(int i = 1; i < num_bins - 1; i++) {
+            for(int j = 1; j < num_bins - 1; j++) {
+                int bin = index(i, j);
+                vector<particle_t> neighbors = get_neighbors(bin);
+                for(int k = 0; k < grid[bin].size(); k++) {
+                    grid[bin][k].ax = grid[bin][k].ay = 0;
+                    for(int l = 0; l < neighbors.size(); l++) {
+                        apply_force(grid[bin][k], neighbors[l], &dmin, &davg, &navg);
+                    }
+                }
+            }
         }
- 
-        //
-        //  move particles
-        //
-        for( int i = 0; i < n; i++ ) 
-            move( particles[i] );		
+
+        int count = 0;
+        for(int i = 1; i < num_bins - 1; i++) {
+            for(int j = 1; j < num_bins - 1; j++) {
+                int bin = index(i,j);
+                for(int k = 0; k < grid[bin].size(); k++) {
+                    particles[count++] = grid[bin][k];
+                }
+            }
+        }  
+
+        for( int i = 0; i < n; i++ ) {
+            move(particles[i]);
+        }
+        clear_grid();
+        bin_particles(n, particles);	
 
         if( find_option( argc, argv, "-no" ) == -1 )
         {
@@ -113,6 +226,6 @@ int main( int argc, char **argv )
     free( particles );
     if( fsave )
         fclose( fsave );
-    
+
     return 0;
 }

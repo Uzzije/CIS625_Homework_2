@@ -1,16 +1,16 @@
 #
-# Stampede - TACC 
+# Hopper - NERSC 
 #
-# Intel Compilers are loaded by default; for other compilers please check the module list
+# Portland Group Compilers PGI are loaded by default; for other compilers please check the module list
 #
-CC = icpc
-MPCC = mpicxx
-OPENMP = -openmp
+CC = g++
+MPCC = CC
+OPENMP = -mp
 CFLAGS = -O3
 LIBS =
 
 
-TARGETS = serial pthreads openmp mpi autograder
+TARGETS = serial autograder pthreads
 
 all:	$(TARGETS)
 
@@ -18,8 +18,8 @@ serial: serial.o common.o
 	$(CC) -o $@ $(LIBS) serial.o common.o
 autograder: autograder.o common.o
 	$(CC) -o $@ $(LIBS) autograder.o common.o
-pthreads: pthreads.o common.o
-	$(CC) -o $@ $(LIBS) -lpthread pthreads.o common.o
+pthreads: pthreads.o pthread_barrier.o common.o
+	$(CC) -o $@ $(LIBS) -lpthread pthreads.o pthread_barrier.o common.o
 openmp: openmp.o common.o
 	$(CC) -o $@ $(LIBS) $(OPENMP) openmp.o common.o
 mpi: mpi.o common.o
@@ -37,6 +37,8 @@ mpi.o: mpi.cpp common.h
 	$(MPCC) -c $(CFLAGS) mpi.cpp
 common.o: common.cpp common.h
 	$(CC) -c $(CFLAGS) common.cpp
+pthread_barrier.o: pthread_barrier.c pthread_barrier.h 
+	$(CC) -c pthread_barrier.c
 
 clean:
 	rm -f *.o $(TARGETS) *.stdout *.txt
