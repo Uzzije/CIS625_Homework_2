@@ -46,10 +46,10 @@ void init_bins( int n, particle_t *particles, vector<bin_type> &bins )
 		bins[ (i*bin_num + j) ].push_back( particles[k] );
 		
 		cout << k << ".\t( " << particles[ k ].x << ", " << particles[ k ].y << " )";
-		cout << "\tIndex = " << ( i*bin_sz + j ) << endl;
+		cout << "\tIndex = " << ( i*bin_num + j ) << endl;
 	}
 	int z;
-	cin >> z;
+	//cin >> z;
 }
 	
 int main( int argc, char **argv )
@@ -91,20 +91,59 @@ int main( int argc, char **argv )
 	
     for( int step = 0; step < NSTEPS; step++ )
     {
-	navg = 0;
+	    navg = 0;
         davg = 0.0;
-	dmin = 1.0;
+	    dmin = 1.0;
         //
         //  compute forces
         //
+        /*
         for( int i = 0; i < n; i++ )
         {
             particles[i].ax = particles[i].ay = 0;
-            for (int j = 0; j < n; j++ )
-				apply_force( particles[i], particles[j],&dmin,&davg,&navg);
-        }		
+            for (int j = 0; j < n; j++)
+				apply_force(particles[i], particles[j],&dmin,&davg,&navg);
+        }
+         */
+        // This checks if two particles a about to collide, and bounces them off each other.
+        for( int i = 0; i < bin_num; i++ ) // starting at the left bottom of the bin; go through each column
+        {
+            for (int j = 0; j < bin_num; j++) // for each column go up each row of that column
+            {
+                bin_type& searching_bin = bins[i*bin_num + j]; // get bin memory address at each row
+                for (int each_particle = 0; each_particle < searching_bin.size(); each_particle++) // for each particle object in that bin memory address
+                {
+                    searching_bin[each_particle].ax = searching_bin[each_particle].ay = 0;
+                }
+                    // search nearby neigbour's bins (8) plus self 9 total search.
+                    // first loop is a 3 iteration by the next lines three iteration (3x3). i.e resulting in the 9 total iteration required for the neigbour search
+                    for (int pos_x = -1; pos_x <= 1; pos_x++)
+                    {
+                        for(int pos_y = -1; pos_y <= 1; pos_y++)
+                        {
+                            // checks the index of the bin that is searching its nearest neighbour.
+                              // If that bin is on an edge move on to next bin address.
+                            if((i + pos_x >= 0) && ((i + pos_x) < bin_num) && ((j + pos_y) >= 0) && ((j + pos_y) < bin_num))
+                            {
+                                bin_type& neighbours_bins = bins[(i+pos_x)*bin_num + j + pos_y]; // gets bin address of neigbouring been to search
+                                //
+                                for(int each_bin_particle = 0; each_bin_particle < searching_bin.size(); each_bin_particle++)
+                                {
+                                    for (int neighbours_bin = 0; neighbours_bin < neighbours_bins.size(); neighbours_bin++)
+                                    {
+                                        apply_force(searching_bin[each_bin_particle], neighbours_bins[neighbours_bin], &dmin, &davg, &navg);
+                                    }
+                                }
+
+                            }
+                        }
+
+                    }
+            }
+        }
+
         //
-        //  move particles
+        //  move particles, this would have to change when dealing with
         //
         for( int i = 0; i < n; i++ ) 
             move( particles[i] );		
