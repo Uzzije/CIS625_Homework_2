@@ -82,7 +82,7 @@ int main( int argc, char **argv )
     set_size( n );
     init_particles( n, particles );
 	init_bins( n, particles, bins );
-    
+    int counter = 0;
     //
     //  simulate a number of time steps
     //
@@ -132,6 +132,7 @@ int main( int argc, char **argv )
                                     for (int neighbours_bin = 0; neighbours_bin < neighbours_bins.size(); neighbours_bin++)
                                     {
                                         apply_force(searching_bin[each_bin_particle], neighbours_bins[neighbours_bin], &dmin, &davg, &navg);
+										counter++;
                                     }
                                 }
 
@@ -141,7 +142,7 @@ int main( int argc, char **argv )
                     }
             }
         }
-
+		cout << counter >> endl;
         //
         //  move particles, this would have to change when dealing with
         //
