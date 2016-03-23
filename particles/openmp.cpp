@@ -4,23 +4,58 @@
 #include <math.h>
 #include "common.h"
 #include "omp.h"
+#include <stdlib.h>
+#include <iostream>
+
+using std::vector;
+using std::cout;
+using std::cin;
+using std::endl;
 
 //
 //  benchmarking program
 //
+
+int	   bin_num;
+double grid_length, bin_sz;
+
+//
+//  tuned constants
+#define density 0.0005
+#define mass    0.01
+#define cutoff  0.01
+#define min_r   (cutoff/100)
+#define dt      0.0005
+void init_bins( int n, particle_t *particles, vector<bin_type> &bins )
+{
+    grid_length = sqrt( density * n );
+    bin_sz = cutoff * 1000;
+    bin_num = ceil( grid_length/bin_sz );
+
+    bins.resize( bin_num*bin_num );
+
+    for (int k = 0; k < n; k++ )
+    {
+        int i = particles[ k ].x/bin_sz;
+        int j = particles[ k ].y/bin_sz;
+
+        bins[ (i*bin_num + j) ].push_back( particles[k] );
+    }
+}
+
 int main( int argc, char **argv )
-{   
-    int navg,nabsavg=0,numthreads; 
+{
+    int navg,nabsavg=0,numthreads;
     double dmin, absmin=1.0,davg,absavg=0.0;
-	
+
     if( find_option( argc, argv, "-h" ) >= 0 )
     {
         printf( "Options:\n" );
         printf( "-h to see this help\n" );
         printf( "-n <int> to set number of particles\n" );
         printf( "-o <filename> to specify the output file name\n" );
-        printf( "-s <filename> to specify a summary file name\n" ); 
-        printf( "-no turns off all correctness checks and particle output\n");   
+        printf( "-s <filename> to specify a summary file name\n" );
+        printf( "-no turns off all correctness checks and particle output\n");
         return 0;
     }
 
@@ -29,34 +64,74 @@ int main( int argc, char **argv )
     char *sumname = read_string( argc, argv, "-s", NULL );
 
     FILE *fsave = savename ? fopen( savename, "w" ) : NULL;
-    FILE *fsum = sumname ? fopen ( sumname, "a" ) : NULL;      
+    FILE *fsum = sumname ? fopen ( sumname, "a" ) : NULL;
 
     particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
+    vector<bin_type> bins;
+    bin_type temp;
+
     set_size( n );
     init_particles( n, particles );
+    init_bins( n, particles, bins );
+    int counter = 0;
 
     //
     //  simulate a number of time steps
     //
     double simulation_time = read_timer( );
+    bool flag = true;
 
-    #pragma omp parallel private(dmin) 
+    #pragma omp parallel private(dmin)
     {
     numthreads = omp_get_num_threads();
     for( int step = 0; step < 1000; step++ )
     {
         navg = 0;
         davg = 0.0;
-	dmin = 1.0;
+	    dmin = 1.0;
         //
         //  compute all forces
         //
         #pragma omp for reduction (+:navg) reduction(+:davg)
-        for( int i = 0; i < n; i++ )
+        //
+        //  compute forces
+        //
+        // This checks if two particles a about to collide, and bounces them off each other.
+        for( int i = 0; i < bin_num; i++ ) // starting at the left bottom of the bin; go through each column
         {
-            particles[i].ax = particles[i].ay = 0;
-            for (int j = 0; j < n; j++ )
-                apply_force( particles[i], particles[j],&dmin,&davg,&navg);
+            for (int j = 0; j < bin_num; j++) // for each column go up each row of that column
+            {
+                bin_type& searching_bin = bins[i*bin_num + j]; // get bin memory address at each row
+                for (int each_particle = 0; each_particle < searching_bin.size(); each_particle++) // for each particle object in that bin memory address
+                {
+                    searching_bin[each_particle].ax = searching_bin[each_particle].ay = 0;
+                }
+                // search nearby neigbour's bins (8) plus self 9 total search.
+                // first loop is a 3 iteration by the next lines three iteration (3x3). i.e resulting in the 9 total iteration required for the neigbour search
+                for (int pos_x = -1; pos_x <= 1; pos_x++)
+                {
+                    for(int pos_y = -1; pos_y <= 1; pos_y++)
+                    {
+                        // checks the index of the bin that is searching its nearest neighbour.
+                        // If that bin is on an edge move on to next bin address.
+                        if((i + pos_x >= 0) && ((i + pos_x) < bin_num) && ((j + pos_y) >= 0) && ((j + pos_y) < bin_num))
+                        {
+                            bin_type& neighbours_bins = bins[(i+pos_x)*bin_num + j + pos_y]; // gets bin address of neigbouring been to search
+                            //
+                            for(int each_bin_particle = 0; each_bin_particle < searching_bin.size(); each_bin_particle++)
+                            {
+                                for (int neighbours_bin = 0; neighbours_bin < neighbours_bins.size(); neighbours_bin++)
+                                {
+                                    apply_force(searching_bin[each_bin_particle], neighbours_bins[neighbours_bin], &dmin, &davg, &navg);
+                                    counter++;
+                                }
+                            }
+
+                        }
+                    }
+
+                }
+            }
         }
         
 		
@@ -64,8 +139,41 @@ int main( int argc, char **argv )
         //  move particles
         //
         #pragma omp for
-        for( int i = 0; i < n; i++ ) 
-            move( particles[i] );
+        for ( int i = 0; i < bin_num; i++ )
+        {
+            for ( int j = 0; j < bin_num; j++ )
+            {
+                bin_type& current = bins[ i * bin_num + j ];
+                int k, end;
+                end = current.size();
+                for ( k = 0; k < end; )
+                {
+                    move( current[ k ] );
+                    int x = ( int )( current[ k ].x / bin_sz );
+                    int y = ( int )( current[ k ].y / bin_sz );
+                    if ( x != i || y != j )
+                    {
+                        temp.push_back( current[ k ] );
+                        current.erase( current.begin() + k );
+                        end--;
+                    }
+                    else
+                    {
+                        k++;
+                    }
+                }
+                current.resize( k );
+            }
+        }
+
+        #pragma omp for
+        for ( int i = 0; i < temp.size(); i++ )
+        {
+            int x = int( temp[ i ].x / bin_sz );
+            int y = int( temp[ i ].y / bin_sz );
+            bins[ x*bin_num + y ].push_back( temp[ i ] );
+        }
+        temp.clear();
   
         if( find_option( argc, argv, "-no" ) == -1 ) 
         {
