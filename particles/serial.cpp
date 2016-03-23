@@ -29,14 +29,10 @@ double grid_length, bin_sz;
 void init_bins( int n, particle_t *particles, vector<bin_type> &bins )
 {
 	grid_length = sqrt( density * n );
-	bin_sz = 0.025;
+	bin_sz = cutoff * 1000;
 	bin_num = ceil( grid_length/bin_sz );
 	
 	bins.resize( bin_num*bin_num );
-	
-	cout << "Grid Length: " << grid_length << endl;
-    cout << "Number of Bins: " << bin_num << endl;
-	cout << endl;
 	
 	for (int k = 0; k < n; k++ )
 	{
@@ -44,12 +40,7 @@ void init_bins( int n, particle_t *particles, vector<bin_type> &bins )
 		int j = particles[ k ].y/bin_sz;
 				
 		bins[ (i*bin_num + j) ].push_back( particles[k] );
-		
-		cout << k << ".\t( " << particles[ k ].x << ", " << particles[ k ].y << " )";
-		cout << "\tIndex = " << ( i*bin_num + j ) << endl;
 	}
-	int z;
-	//cin >> z;
 }
 	
 int main( int argc, char **argv )
@@ -78,6 +69,7 @@ int main( int argc, char **argv )
 
     particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
 	vector<bin_type> bins;
+	bin_type temp;
 	
     set_size( n );
     init_particles( n, particles );
@@ -94,17 +86,10 @@ int main( int argc, char **argv )
 	    navg = 0;
         davg = 0.0;
 	    dmin = 1.0;
+		
         //
         //  compute forces
         //
-        /*
-        for( int i = 0; i < n; i++ )
-        {
-            particles[i].ax = particles[i].ay = 0;
-            for (int j = 0; j < n; j++)
-				apply_force(particles[i], particles[j],&dmin,&davg,&navg);
-        }
-         */
         // This checks if two particles a about to collide, and bounces them off each other.
         for( int i = 0; i < bin_num; i++ ) // starting at the left bottom of the bin; go through each column
         {
@@ -142,12 +127,41 @@ int main( int argc, char **argv )
                     }
             }
         }
-		cout << counter >> endl;
-        //
-        //  move particles, this would have to change when dealing with
-        //
-        for( int i = 0; i < n; i++ ) 
-            move( particles[i] );		
+		
+		for ( int i = 0; i < bin_num; i++ )
+		{
+			for ( int j = 0; j < bin_num; j++ )
+			{
+				bin_type& current = bins[ i * bin_num + j ];
+				int k, end;
+				end = current.size();
+				for ( k = 0; k < end; )
+				{
+					move( current[ k ] );
+					int x = ( int )( current[ k ].x / bin_sz );
+					int y = ( int )( current[ k ].y / bin_sz );
+					if ( x != i || y != j )
+					{
+						temp.push_back( current[ k ] );
+						current.erase( current.begin() + k );
+						end--;
+					}
+					else
+					{
+						k++;
+					}
+				}
+				current.resize( k );
+			}
+		}
+
+        for ( int i = 0; i < temp.size(); i++ )
+        {
+            int x = int( temp[ i ].x / bin_sz );
+            int y = int( temp[ i ].y / bin_sz );
+            bins[ x*bin_num + y ].push_back( temp[ i ] );
+        }
+        temp.clear();	
 
         if( find_option( argc, argv, "-no" ) == -1 )
         {
