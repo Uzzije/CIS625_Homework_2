@@ -64,7 +64,7 @@ int main( int argc, char **argv )
 	  else if (b2 < 2) grade = (2-b2)/0.5 * 75.00;
 	  else grade =0.0;
 	  
-	  printf("Serial Grade = %7.2lf",grade);
+	  printf("Grade for serial code is: %7.2lf",grade);
       printf("\n\n");
     }
 
@@ -78,7 +78,7 @@ int main( int argc, char **argv )
  
       num = count/2;
  
-      ss[0] = sse[0] = ws[0] = t[0]/t[1];
+      ss[0] = ws[0] = t[0]/t[1];
       for (i=2; i<=num;i++) {
          ss[i-1] = t[0]/t[i];
 		 sse[i-1] = ss[i-1]/p[i];
@@ -135,7 +135,7 @@ int main( int argc, char **argv )
 	  
 	  grade= 0.5 * ssgrade + 0.5 * wsgrade;
 	  
-	  printf("\n%s Grade = %7.2f\n\n",autoname,grade);
+	  printf("\nGrade for %s is %7.2f\n\n",autoname,grade);
     }
 
     fclose( fread );

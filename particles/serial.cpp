@@ -2,218 +2,211 @@
 #include <stdio.h>
 #include <assert.h>
 #include <math.h>
-#include <iostream>
 #include "common.h"
+#include <vector>
 
-using std::vector;
-using std::cout;
-using std::cin;
-using std::endl;
+#define TIMERS 0
+// #define MAXPARTILCESPERBOX 5000
 
+#include <stdint.h>
+static inline uint32_t log2(const uint32_t x) {
+  uint32_t y;
+  asm ( "\tbsr %1, %0\n"
+        : "=r"(y)
+        : "r" (x)
+        );
+  return y;
+}
 //
 //  benchmarking program
 //
-
-int	   bin_num;
-double grid_length, bin_sz;
-
-//
-//  tuned constants
-//
-#define density 0.0005
-#define mass    0.01
-#define cutoff  0.01
-#define min_r   (cutoff/100)
-#define dt      0.0005
-
-void init_bins( int n, particle_t *particles, vector<bin_type> &bins )
+int main(int argc, char **argv)
 {
-	grid_length = sqrt( density * n );
-	bin_sz = cutoff * 1000;
-	bin_num = ceil( grid_length/bin_sz );
-	
-	bins.resize( bin_num*bin_num );
-	
-	for (int k = 0; k < n; k++ )
-	{
-		int i = particles[ k ].x/bin_sz;
-		int j = particles[ k ].y/bin_sz;
-				
-		bins[ (i*bin_num + j) ].push_back( particles[k] );
-	}
-}
-	
-int main( int argc, char **argv )
-{    
-    int navg,nabsavg=0;
-    double davg,dmin, absmin=1.0, absavg=0.0;
+    int navg, nabsavg = 0;
+    double davg, dmin, absmin = 1.0, absavg = 0.0;
 
-    if( find_option( argc, argv, "-h" ) >= 0 )
-    {
-        printf( "Options:\n" );
-        printf( "-h to see this help\n" );
-        printf( "-n <int> to set the number of particles\n" );
-        printf( "-o <filename> to specify the output file name\n" );
-        printf( "-s <filename> to specify a summary file name\n" );
-        printf( "-no turns off all correctness checks and particle output\n");
+    if(find_option(argc, argv, "-h") >= 0) {
+        printf("Options:\n");
+        printf("-h to see this help\n");
+        printf("-n <int> to set the number of particles\n");
+        printf("-o <filename> to specify the output file name\n");
+        printf("-s <filename> to specify a summary file name\n");
+        printf("-no turns off all correctness checks and particle output\n");
         return 0;
     }
-    
-    int n = read_int( argc, argv, "-n", 1000 );
 
-    char *savename = read_string( argc, argv, "-o", NULL );
-    char *sumname = read_string( argc, argv, "-s", NULL );
-    
-    FILE *fsave = savename ? fopen( savename, "w" ) : NULL;
-    FILE *fsum = sumname ? fopen ( sumname, "a" ) : NULL;
+    const uint32_t n = read_int(argc, argv, "-n", 1000);
 
-    particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
-	vector<bin_type> bins;
-	bin_type temp;
-	
-    set_size( n );
-    init_particles( n, particles );
-	init_bins( n, particles, bins );
-    int counter = 0;
+    char *savename = read_string(argc, argv, "-o", NULL);
+    char *sumname = read_string(argc, argv, "-s", NULL);
+
+    FILE *fsave = savename ? fopen(savename, "w") : NULL;
+    FILE *fsum = sumname ? fopen(sumname, "a") : NULL;
+
+    particle_t *particles = (particle_t*) malloc(n * sizeof(particle_t));
+    set_size(n);
+    init_particles(n, particles);
+
     //
     //  simulate a number of time steps
     //
-    double simulation_time = read_timer( );
-	bool flag = true;
-	
-    for( int step = 0; step < NSTEPS; step++ )
-    {
-	    navg = 0;
+    double simulation_time = read_timer();
+#if TIMERS==1
+    double force_time = 0.0;
+    double move_time = 0.0;
+    double running_time;
+#endif
+
+    double size =  sqrt(0.0005 * n);
+    double interaction_length = 0.01;
+
+
+    int blocksize = (int) ceil(size/interaction_length);
+    double block_width = size/blocksize;
+
+    particle_t*** blocks = (particle_t***) malloc(blocksize*blocksize * sizeof(particle_t**));
+    for(int b=0; b<blocksize*blocksize; b++){
+        blocks[b] = (particle_t**)malloc(n*sizeof(particle_t*));
+    }
+
+    
+    for(int step = 0; step < NSTEPS; step++) {
+        navg = 0;
         davg = 0.0;
-	    dmin = 1.0;
-		
+        dmin = 1.0;
         //
         //  compute forces
         //
-        // This checks if two particles a about to collide, and bounces them off each other.
-        for( int i = 0; i < bin_num; i++ ) // starting at the left bottom of the bin; go through each column
-        {
-            for (int j = 0; j < bin_num; j++) // for each column go up each row of that column
-            {
-                bin_type& searching_bin = bins[i*bin_num + j]; // get bin memory address at each row
-                for (int each_particle = 0; each_particle < searching_bin.size(); each_particle++) // for each particle object in that bin memory address
-                {
-                    searching_bin[each_particle].ax = searching_bin[each_particle].ay = 0;
-                }
-                    // search nearby neigbour's bins (8) plus self 9 total search.
-                    // first loop is a 3 iteration by the next lines three iteration (3x3). i.e resulting in the 9 total iteration required for the neigbour search
-                    for (int pos_x = -1; pos_x <= 1; pos_x++)
-                    {
-                        for(int pos_y = -1; pos_y <= 1; pos_y++)
-                        {
-                            // checks the index of the bin that is searching its nearest neighbour.
-                              // If that bin is on an edge move on to next bin address.
-                            if((i + pos_x >= 0) && ((i + pos_x) < bin_num) && ((j + pos_y) >= 0) && ((j + pos_y) < bin_num))
-                            {
-                                bin_type& neighbours_bins = bins[(i+pos_x)*bin_num + j + pos_y]; // gets bin address of neigbouring been to search
-                                //
-                                for(int each_bin_particle = 0; each_bin_particle < searching_bin.size(); each_bin_particle++)
-                                {
-                                    for (int neighbours_bin = 0; neighbours_bin < neighbours_bins.size(); neighbours_bin++)
-                                    {
-                                        apply_force(searching_bin[each_bin_particle], neighbours_bins[neighbours_bin], &dmin, &davg, &navg);
-										counter++;
-                                    }
-                                }
+#if TIMERS==1
+        running_time = read_timer();
+#endif
 
-                            }
+        int number_in_block[blocksize*blocksize];
+
+        for(int b=0; b<blocksize*blocksize; b++){
+            number_in_block[b] = 0; // starts with no particles in any box;
+        }
+
+        for(size_t p = 0; p < n; p++) {
+            double x = particles[p].x;
+            double y = particles[p].y;
+
+            int x_index = (int)floor(x/block_width);
+            int y_index = (int)floor(y/block_width);
+            int particle_index = number_in_block[x_index + y_index*blocksize]++;
+            blocks[x_index + y_index*blocksize][particle_index] = particles+p;
+            assert(particle_index < n);
+        }
+
+        for(int i=0; i<blocksize; i++){
+            for(int j=0; j<blocksize; j++){
+                for(int p=0; p<number_in_block[i + j*blocksize]; p++ ){
+                    blocks[i + j*blocksize][p]->ax = blocks[i + j*blocksize][p]->ay = 0;
+                    //interact with blocks and neighbors
+                    for(int xoffset=-1; xoffset<2; xoffset++){
+                        int xblockindex = i+xoffset;
+                        // dont go out of bounds
+                        if(xblockindex<0 || xblockindex >= blocksize ){
+                            continue;
                         }
-
+                        for(int yoffset=-1; yoffset<2; yoffset++){
+                            int yblockindex = j+yoffset;
+                            // dont go out of bounds
+                            if(yblockindex<0 || yblockindex >= blocksize ){
+                                continue;
+                            }
+                            for(int num=0; num<number_in_block[xblockindex + yblockindex*blocksize]; num++ ){
+                                // apply the force
+                                apply_force(*(blocks[i + j*blocksize][p]), // this particle
+                                            *(blocks[xblockindex + yblockindex*blocksize][num]), // its neighbor
+                                            &dmin, &davg, &navg);
+                                }
+                        }
                     }
+                }
             }
         }
-		
-		for ( int i = 0; i < bin_num; i++ )
-		{
-			for ( int j = 0; j < bin_num; j++ )
-			{
-				bin_type& current = bins[ i * bin_num + j ];
-				int k, end;
-				end = current.size();
-				for ( k = 0; k < end; )
-				{
-					move( current[ k ] );
-					int x = ( int )( current[ k ].x / bin_sz );
-					int y = ( int )( current[ k ].y / bin_sz );
-					if ( x != i || y != j )
-					{
-						temp.push_back( current[ k ] );
-						current.erase( current.begin() + k );
-						end--;
-					}
-					else
-					{
-						k++;
-					}
-				}
-				current.resize( k );
-			}
-		}
-        for ( int i = 0; i < temp.size(); i++ )
-        {
-            int x = int( temp[ i ].x / bin_sz );
-            int y = int( temp[ i ].y / bin_sz );
-            bins[ x*bin_num + y ].push_back( temp[ i ] );
-        }
-        temp.clear();
 
-        if( find_option( argc, argv, "-no" ) == -1 )
-        {
-          //
-          // Computing statistical data
-          //
-          if (navg) {
-            absavg +=  davg/navg;
-            nabsavg++;
-          }
-          if (dmin < absmin) absmin = dmin;
-		
-          //
-          //  save if necessary
-          //
-          if( fsave && (step%SAVEFREQ) == 0 )
-              save( fsave, n, particles );
+#if TIMERS==1
+        force_time += read_timer() - running_time;
+        running_time = read_timer();
+#endif
+//
+//  move particles
+//
+        for(size_t i = 0; i < n; i++) {
+            move(particles[i]);
+        }
+#if TIMERS==1
+        move_time += read_timer() - running_time;
+#endif
+
+        if(find_option(argc, argv, "-no") == -1) {
+            //
+            // Computing statistical data
+            //
+            if(navg) {
+                absavg +=  davg / navg;
+                nabsavg++;
+            }
+            if(dmin < absmin) {
+                absmin = dmin;
+            }
+
+            //
+            //  save if necessary
+            //
+            if(fsave && (step % SAVEFREQ) == 0) {
+                save(fsave, n, particles);
+            }
         }
     }
-    simulation_time = read_timer( ) - simulation_time;
-    
-    printf( "n = %d, simulation time = %g seconds", n, simulation_time);
+    simulation_time = read_timer() - simulation_time;
 
-    if( find_option( argc, argv, "-no" ) == -1 )
-    {
-      if (nabsavg) absavg /= nabsavg;
-    // 
-    //  -the minimum distance absmin between 2 particles during the run of the simulation
-    //  -A Correct simulation will have particles stay at greater than 0.4 (of cutoff) with typical values between .7-.8
-    //  -A simulation were particles don't interact correctly will be less than 0.4 (of cutoff) with typical values between .01-.05
-    //
-    //  -The average distance absavg is ~.95 when most particles are interacting correctly and ~.66 when no particles are interacting
-    //
-    printf( ", absmin = %lf, absavg = %lf", absmin, absavg);
-    if (absmin < 0.4) printf ("\nThe minimum distance is below 0.4 meaning that some particle is not interacting");
-    if (absavg < 0.8) printf ("\nThe average distance is below 0.8 meaning that most particles are not interacting");
+    printf("n = %d, simulation time = %g seconds", n, simulation_time);
+
+    if(find_option(argc, argv, "-no") == -1) {
+        if(nabsavg) {
+            absavg /= nabsavg;
+        }
+        //
+        //  -the minimum distance absmin between 2 particles during the run of the simulation
+        //  -A Correct simulation will have particles stay at greater than 0.4 (of cutoff) with typical values between .7-.8
+        //  -A simulation were particles don't interact correctly will be less than 0.4 (of cutoff) with typical values between .01-.05
+        //
+        //  -The average distance absavg is ~.95 when most particles are interacting correctly and ~.66 when no particles are interacting
+        //
+        printf(", absmin = %lf, absavg = %lf", absmin, absavg);
+        if(absmin < 0.4) {
+            printf("\nThe minimum distance is below 0.4 meaning that some particle is not interacting");
+        }
+        if(absavg < 0.8) {
+            printf("\nThe average distance is below 0.8 meaning that most particles are not interacting");
+        }
     }
-    printf("\n");     
+    printf("\n");
+#if TIMERS==1
+    printf(" force time = %g seconds", force_time);
+    printf(" move time = %g seconds\n", move_time);
+#endif
 
-    //
-    // Printing summary data
-    //
-    if( fsum) 
-        fprintf(fsum,"%d %g\n",n,simulation_time);
- 
-    //
-    // Clearing space
-    //
-    if( fsum )
-        fclose( fsum );    
-    free( particles );
-    if( fsave )
-        fclose( fsave );
-    
+//
+// Printing summary data
+//
+    if(fsum) {
+        fprintf(fsum, "%d %g\n", n, simulation_time);
+    }
+
+//
+// Clearing space
+//
+    if(fsum) {
+        fclose(fsum);
+    }
+    free(particles);
+    if(fsave) {
+        fclose(fsave);
+    }
+
     return 0;
 }
