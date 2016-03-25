@@ -4,8 +4,8 @@
 #include <math.h>
 #include "common.h"
 #include "omp.h"
-#include <stdlib.h>
 #include <iostream>
+#include <vector>
 
 using std::vector;
 using std::cout;
@@ -26,10 +26,11 @@ double grid_length, bin_sz;
 #define cutoff  0.01
 #define min_r   (cutoff/100)
 #define dt      0.0005
+
 void init_bins( int n, particle_t *particles, vector<bin_type> &bins )
 {
     grid_length = sqrt( density * n );
-    bin_sz = cutoff * 1000;
+    bin_sz = cutoff * 2;
     bin_num = ceil( grid_length/bin_sz );
 
     bins.resize( bin_num*bin_num );
@@ -68,7 +69,7 @@ int main( int argc, char **argv )
 
     particle_t *particles = (particle_t*) malloc( n * sizeof(particle_t) );
     vector<bin_type> bins;
-    bin_type temp;
+    vector<bin_type> temp;
 
     set_size( n );
     init_particles( n, particles );
@@ -80,12 +81,17 @@ int main( int argc, char **argv )
     //
     double simulation_time = read_timer( );
     bool flag = true;
-
     #pragma omp parallel private(dmin)
     {
-    numthreads = omp_get_num_threads();
-    for( int step = 0; step < 1000; step++ )
-    {
+
+        #pragma omp master
+        {
+            numthreads = omp_get_num_threads();
+            temp.resize(numthreads);
+        }
+
+     for( int step = 0; step < 1000; step++ )
+     {
         navg = 0;
         davg = 0.0;
 	    dmin = 1.0;
@@ -138,6 +144,9 @@ int main( int argc, char **argv )
         //
         //  move particles
         //
+        int id = omp_get_thread_num();
+        bin_type& new_temp = temp[id];
+        new_temp.clear();
         #pragma omp for
         for ( int i = 0; i < bin_num; i++ )
         {
@@ -153,7 +162,7 @@ int main( int argc, char **argv )
                     int y = ( int )( current[ k ].y / bin_sz );
                     if ( x != i || y != j )
                     {
-                        temp.push_back( current[ k ] );
+                        new_temp.push_back( current[ k ] );
                         current.erase( current.begin() + k );
                         end--;
                     }
@@ -166,14 +175,22 @@ int main( int argc, char **argv )
             }
         }
 
-        #pragma omp for
-        for ( int i = 0; i < temp.size(); i++ )
+        #pragma omp master
         {
-            int x = int( temp[ i ].x / bin_sz );
-            int y = int( temp[ i ].y / bin_sz );
-            bins[ x*bin_num + y ].push_back( temp[ i ] );
+            for(int threads=0; threads < numthreads; threads++)
+            {
+                bin_type& new_temp = temp[threads];
+                for ( int i = 0; i < new_temp.size(); i++ )
+                {
+                    int x = int( new_temp[ i ].x / bin_sz );
+                    int y = int( new_temp[ i ].y / bin_sz );
+                    bins[ x*bin_num + y ].push_back( new_temp[ i ] );
+                }
+            }
+
         }
-        temp.clear();
+
+        //temp.clear();
   
         if( find_option( argc, argv, "-no" ) == -1 ) 
         {
@@ -196,8 +213,9 @@ int main( int argc, char **argv )
           if( fsave && (step%SAVEFREQ) == 0 )
               save( fsave, n, particles );
         }
+        #pragma omp barrier
     }
-}
+  }
     simulation_time = read_timer( ) - simulation_time;
     
     printf( "n = %d,threads = %d, simulation time = %g seconds", n,numthreads, simulation_time);
