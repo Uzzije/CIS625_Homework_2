@@ -136,18 +136,18 @@ int main( int argc, char **argv )
 
     particle_t *particles = new particle_t[n];
     
-    MPI_Datatype PARTICLE;
-    MPI_Type_contiguous( 6, MPI_DOUBLE, &PARTICLE );
-    MPI_Type_commit( &PARTICLE );
+    MPI_Datatype PARTICLE; // declare datatype
+    MPI_Type_contiguous( 6, MPI_DOUBLE, &PARTICLE ); // create a new datatype (particles) of 6 elements of type MPI_DOUBLE
+    MPI_Type_commit( &PARTICLE ); //commit new datatype
     
     //
     //  initialize and distribute the particles (that's fine to leave it unoptimized)
     //
     set_size( n );
-    if( rank == 0 )
-        init_particles( n, particles );
+    if( rank == 0 ) // if rank i.e processor is zero
+        init_particles( n, particles ); //initialize the particle
 
-    MPI_Bcast(particles, n, PARTICLE, 0, MPI_COMM_WORLD);
+    MPI_Bcast(particles, n, PARTICLE, 0, MPI_COMM_WORLD); //Give the particle datatype defined in the source (0) to everyone
 
     vector<bin_t> bins;
     build_bins(bins, particles, n);
@@ -155,7 +155,7 @@ int main( int argc, char **argv )
     delete[] particles;
     particles = NULL;
 
-    int x_bins_per_proc = bin_count / n_proc;
+    int x_bins_per_proc = bin_count / n_proc; // Declare how many bins a processor should have
 
     // although each worker has all particles, we only access particles within
     // my_bins_start, my_bins_end.
@@ -163,8 +163,8 @@ int main( int argc, char **argv )
     int my_bins_start = x_bins_per_proc * rank;
     int my_bins_end = x_bins_per_proc * (rank + 1);
 
-    if (rank == n_proc - 1)
-        my_bins_end = bin_count;
+    if (rank == n_proc - 1) //if rank is the last processor
+        my_bins_end = bin_count; //
     
     // printf("worker %d: from %d to %d.\n", rank, my_bins_start, my_bins_end);
     //
