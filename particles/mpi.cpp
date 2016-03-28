@@ -2,13 +2,13 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <assert.h>
-#include "common.h"
 #include <vector>
 #include <map>
 #include <set>
 #include <cmath>
 #include <signal.h>
 #include <unistd.h>
+#include "common.h"
 
 //
 //  benchmarking program
@@ -39,7 +39,7 @@ inline void build_bins(vector<bin_type>& bins, particle_t* particles, int n){
 inline void compute_force_for_bin(vector<bin_type>& bins, int i, int j, double& dmin, double& davg, int& navg)
 {
 
-            bin_type& searching_bin = bins[i*bin_num + j]; // get bin memory address at each row
+            bin_type& searching_bin = bins[i*bin_count + j]; // get bin memory address at each row
             for (int each_particle = 0; each_particle < searching_bin.size(); each_particle++) // for each particle object in that bin memory address
             {
                 searching_bin[each_particle].ax = searching_bin[each_particle].ay = 0;
@@ -52,16 +52,16 @@ inline void compute_force_for_bin(vector<bin_type>& bins, int i, int j, double& 
                 {
                     // checks the index of the bin that is searching its nearest neighbour.
                     // If that bin is on an edge move on to next bin address.
-                    if((i + pos_x >= 0) && ((i + pos_x) < bin_num) && ((j + pos_y) >= 0) && ((j + pos_y) < bin_num))
+                    if((i + pos_x >= 0) && ((i + pos_x) < bin_count) && ((j + pos_y) >= 0) && ((j + pos_y) < bin_count))
                     {
-                        bin_type& neighbours_bins = bins[(i+pos_x)*bin_num + j + pos_y]; // gets bin address of neigbouring been to search
+                        bin_type& neighbours_bins = bins[(i+pos_x)*bin_count + j + pos_y]; // gets bin address of neigbouring been to search
                         //
                         for(int each_bin_particle = 0; each_bin_particle < searching_bin.size(); each_bin_particle++)
                         {
                             for (int neighbours_bin = 0; neighbours_bin < neighbours_bins.size(); neighbours_bin++)
                             {
                                 apply_force(searching_bin[each_bin_particle], neighbours_bins[neighbours_bin], &dmin, &davg, &navg);
-                                counter++;
+
                             }
                         }
 
@@ -77,7 +77,7 @@ void bin_particle(particle_t& particle, vector<bin_type>& bins)
     bins[x*bin_count + y].push_back(particle);
 }
 
-inline void get_neighbors(int i, in j, vector<int>& neighbors)
+inline void get_neighbors(int i, int j, vector<int>& neighbors)
 {
     for(int dx = -1; dx <= 1; dx++){
         for(int dy = -1; dy <= 1; dy++){
@@ -162,31 +162,11 @@ int main( int argc, char **argv )
         bins_end_point = bin_count;
     }
     //
-    //  set up the data partitioning across processors
     //
-    int particle_per_proc = (n + n_proc - 1) / n_proc;
-    int *partition_offsets = (int*) malloc( (n_proc+1) * sizeof(int) );
-    for( int i = 0; i < n_proc+1; i++ )
-        partition_offsets[i] = min( i * particle_per_proc, n );
-    
-    int *partition_sizes = (int*) malloc( n_proc * sizeof(int) );
-    for( int i = 0; i < n_proc; i++ )
-        partition_sizes[i] = partition_offsets[i+1] - partition_offsets[i];
-    
-    //
-    //  allocate storage for local partition
-    //
-    int nlocal = partition_sizes[rank];
-    particle_t *local = (particle_t*) malloc( nlocal * sizeof(particle_t) );
-    
     //
     //  initialize and distribute the particles (that's fine to leave it unoptimized)
     //
-    set_size( n );
-    if( rank == 0 )
-        init_particles( n, particles );
-    MPI_Scatterv( particles, partition_sizes, partition_offsets, PARTICLE, local, nlocal, PARTICLE, 0, MPI_COMM_WORLD );
-    
+
     //
     //  simulate a number of time steps
     //
@@ -199,8 +179,6 @@ int main( int argc, char **argv )
         // 
         //  collect all global data locally (not good idea to do)
         //
-        MPI_Allgatherv( local, nlocal, PARTICLE, particles, partition_sizes, partition_offsets, PARTICLE, MPI_COMM_WORLD );
-        
         //
         //  save current step if necessary (slightly different semantics than in other codes)
         //
@@ -211,7 +189,7 @@ int main( int argc, char **argv )
         //
         //  compute all forces
         //
-        for (int i = bins_start_point; i < bins_end_point; i++){
+        for (int i = bins_start_point; i < bins_end_point; ++i){
             for(int j = 0; j < bin_count; ++j){
                 compute_force_for_bin(bins, i, j, dmin, davg, navg);
             }
@@ -244,23 +222,26 @@ int main( int argc, char **argv )
         bin_type remote_move;
         for(int i = bins_start_point; i < bins_end_point; ++i){
             for(int j = 0; j < bin_count; ++j){
-                bin_type& current = bins[ i * bin_num + j ];
+                bin_type& current = bins[ i * bin_count + j ];
                 int k, end;
                 end = current.size();
                 for ( k = 0; k < end; )
                 {
                     move( current[ k ] );
-                    int x = ( int )( current[ k ].x / bin_sz );
-                    int y = ( int )( current[ k ].y / bin_sz );
-                    if ( x != i || y != j )
-                    {
-                        temp.push_back( current[ k ] );
-                        current.erase( current.begin() + k );
-                        end--;
-                    }
-                    else
-                    {
-                        k++;
+                    int x = int`( current[ k ].x / bin_size );
+                    int y = int( current[ k ].y / bin_size );
+                    if (bins_start_point <= x && x < bins_end_point) {
+                        if (x == i && y == j) {
+                            ++k;
+                        }
+                        else {
+                            local_move.push_back(current[k]);
+                            current[k] = current[--end];
+                        }
+                    } else {
+                        //int who = x / x_bins_per_proc;
+                        remote_move.push_back(current[k]);
+                        current[k] = current[--end];
                     }
                 }
                 current.resize( k );
@@ -292,7 +273,7 @@ int main( int argc, char **argv )
                 bin.clear();
             }
         }
-        bin_type incoming_type;
+        bin_type incoming_move;
         int send_count = remote_move.size();
         int recv_counts[n_proc];
 
@@ -406,10 +387,6 @@ int main( int argc, char **argv )
     //
     if ( fsum )
         fclose( fsum );
-    free( partition_offsets );
-    free( partition_sizes );
-    free( local );
-    free( particles );
     if( fsave )
         fclose( fsave );
     
