@@ -228,8 +228,8 @@ int main( int argc, char **argv )
                 for ( k = 0; k < end; )
                 {
                     move( current[ k ] );
-                    int x = int`( current[ k ].x / bin_size );
-                    int y = int( current[ k ].y / bin_size );
+                    int x = (int)( current[ k ].x / bin_size );
+                    int y = (int)( current[ k ].y / bin_size );
                     if (bins_start_point <= x && x < bins_end_point) {
                         if (x == i && y == j) {
                             ++k;
