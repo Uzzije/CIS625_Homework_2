@@ -3,10 +3,20 @@
 #include <stdio.h>
 #include <assert.h>
 #include "common.h"
+#include <vector>
+#include <map>
+#include <set>
+#include <cmath>
+#include <signal.h>
+#include <unistd.h>
 
 //
 //  benchmarking program
-//
+
+using std::vector;
+using std::map;
+using std::set;
+
 int main( int argc, char **argv )
 {    
     int navg, nabsavg=0;
