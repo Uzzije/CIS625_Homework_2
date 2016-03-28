@@ -160,7 +160,8 @@ int main( int argc, char **argv )
     // although each worker has all particles, we only access particles within
     // my_bins_start, my_bins_end.
 
-    int my_bins_start = x_bins_per_proc * rank;
+    int my_bins_start = x_bins_per_proc * rank; //i.e processor zero starts at the first bin.
+    //bin
     int my_bins_end = x_bins_per_proc * (rank + 1);
 
     if (rank == n_proc - 1) //if rank is the last processor
@@ -268,7 +269,7 @@ int main( int argc, char **argv )
         int recv_counts[n_proc];
 
         // printf("worker: %d. MPI_Gather.\n", rank);
-        MPI_Gather(&send_count, 1, MPI_INT, recv_counts, 1, MPI_INT, 0, MPI_COMM_WORLD);
+        MPI_Gather(&send_count, 1, MPI_INT, recv_counts, 1, MPI_INT, 0, MPI_COMM_WORLD); // Gathers together values from a group of processes
 
         // now root knows recv_counts
 
